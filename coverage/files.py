@@ -21,6 +21,14 @@ from coverage.misc import human_sorted, isolate_module, join_regex, plural
 
 os = isolate_module(os)
 
+try:
+    from coverage.tracer import _realpath_existing
+except ImportError:
+
+    def _realpath_existing(path: str) -> str | None:
+        """Use the original Python implementation without the C extension."""
+        return None
+
 
 RELATIVE_DIR: str = ""
 CANONICAL_FILENAME_CACHE: dict[str, str] = {}
@@ -155,7 +163,10 @@ else:
 
 def abs_file(path: str) -> str:
     """Return the absolute normalized form of `path`."""
-    return actual_path(os.path.abspath(os.path.realpath(path)))
+    resolved = _realpath_existing(path)
+    if resolved is None:
+        resolved = os.path.realpath(path)
+    return actual_path(os.path.abspath(resolved))
 
 
 def zip_location(filename: str) -> tuple[str, str] | None:

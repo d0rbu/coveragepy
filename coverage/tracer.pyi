@@ -7,6 +7,8 @@ from typing import Any, Dict
 
 from coverage.types import TFileDisposition, TTraceData, TTraceFn, Tracer
 
+def _realpath_existing(path: str) -> str | None: ...
+
 class CFileDisposition(TFileDisposition):
     """CFileDisposition is in ctracer/filedisp.c"""
 

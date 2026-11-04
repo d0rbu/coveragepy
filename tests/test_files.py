@@ -9,6 +9,7 @@ import itertools
 import os
 import os.path
 import re
+from pathlib import Path
 
 from typing import Any
 from collections.abc import Iterable
@@ -33,6 +34,73 @@ from coverage.files import (
 
 from tests.coveragetest import CoverageTest
 from tests.helpers import os_sep
+
+
+class NativeRealpathTest(CoverageTest):
+    """The native shortcut preserves Python's path and fallback behavior."""
+
+    @pytest.mark.skipif(env.WINDOWS, reason="POSIX symlink behavior")
+    def test_paths_and_errors_match_python(self) -> None:
+        self.make_file("directory/file.py")
+        os.symlink("directory", "link")
+        os.symlink("missing", "dangling")
+        os.symlink("loop_b", "loop_a")
+        os.symlink("loop_a", "loop_b")
+        invalid_name = b"invalid-\xff"
+        with open(invalid_name, "wb"):
+            pass
+        paths: list[Any] = [
+            "",
+            ".",
+            "..",
+            "/",
+            "//",
+            "///",
+            "directory/file.py",
+            "link/file.py",
+            "link/../directory/file.py",
+            "directory/file.py/child",
+            "dangling/child",
+            "loop_a/child",
+            "missing/child",
+            "file\0tail",
+            os.fsdecode(invalid_name),
+            invalid_name,
+            Path("directory/file.py"),
+            b"missing/child",
+            "bad-\ud800",
+            os.path.abspath("bad-\ud800"),
+            None,
+            1,
+        ]
+        for path in paths:
+            try:
+                expected = actual_path(os.path.abspath(os.path.realpath(path)))
+            except (TypeError, ValueError, OSError) as error:
+                with pytest.raises(type(error)) as caught:
+                    abs_file(path)
+                assert caught.value.args == error.args
+            else:
+                result = abs_file(path)
+                assert result == expected
+                assert type(result) is type(expected)
+
+    @pytest.mark.skipif(env.WINDOWS, reason="POSIX symlink behavior")
+    def test_changed_symlink_is_resolved_again(self) -> None:
+        self.make_file("first/source.py")
+        self.make_file("second/source.py")
+        os.symlink("first", "link")
+        assert abs_file("link/source.py") == os.path.realpath("first/source.py")
+        os.unlink("link")
+        os.symlink("second", "link")
+        assert abs_file("link/source.py") == os.path.realpath("second/source.py")
+
+    def test_without_native_shortcut(self) -> None:
+        self.make_file("directory/file.py")
+        expected = actual_path(os.path.abspath(os.path.realpath("directory/file.py")))
+        with mock.patch.object(files, "_realpath_existing", return_value=None):
+            assert abs_file("directory/file.py") == expected
+            assert abs_file("not-created.py") == actual_path(os.path.abspath("not-created.py"))
 
 
 class FilesTest(CoverageTest):

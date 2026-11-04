@@ -9,6 +9,54 @@
 
 #define MODULE_DOC PyDoc_STR("Fast coverage tracer.")
 
+/* Resolve existing paths without walking each component in Python.  None
+ * asks the caller to preserve os.path.realpath's non-strict/error behavior. */
+static PyObject *
+realpath_existing(PyObject *self, PyObject *path)
+{
+#if defined(HAVE_REALPATH) && !defined(MS_WINDOWS)
+    PyObject *encoded;
+    PyObject *result;
+    char *resolved;
+    const char *input;
+
+    if (!PyUnicode_CheckExact(path)) {
+        Py_RETURN_NONE;
+    }
+    encoded = PyUnicode_EncodeFSDefault(path);
+    if (encoded == NULL) {
+        if (PyErr_ExceptionMatches(PyExc_UnicodeError)) {
+            PyErr_Clear();
+            Py_RETURN_NONE;
+        }
+        return NULL;
+    }
+    if (memchr(PyBytes_AS_STRING(encoded), '\0', PyBytes_GET_SIZE(encoded))) {
+        Py_DECREF(encoded);
+        Py_RETURN_NONE;
+    }
+    input = PyBytes_AS_STRING(encoded);
+    Py_BEGIN_ALLOW_THREADS
+    resolved = realpath(input, NULL);
+    Py_END_ALLOW_THREADS
+    Py_DECREF(encoded);
+    if (resolved == NULL) {
+        Py_RETURN_NONE;
+    }
+    result = PyUnicode_DecodeFSDefault(resolved);
+    free(resolved);
+    return result;
+#else
+    Py_RETURN_NONE;
+#endif
+}
+
+static PyMethodDef tracer_methods[] = {
+    {"_realpath_existing", realpath_existing, METH_O,
+        PyDoc_STR("Resolve an existing path, or return None for Python fallback.")},
+    {NULL, NULL, 0, NULL}
+};
+
 static BOOL module_inited = FALSE;
 
 static int
@@ -69,6 +117,7 @@ static PyModuleDef moduledef = {
     .m_name = "coverage.tracer",
     .m_doc = MODULE_DOC,
     .m_size = 0,
+    .m_methods = tracer_methods,
     .m_slots = tracer_slots,
 };
 
