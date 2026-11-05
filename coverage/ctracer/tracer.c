@@ -557,27 +557,30 @@ CTracer_handle_call(CTracer *self, PyFrameObject *frame)
 
     /* A call event is really a "start frame" event, and can happen for
      * re-entering a generator also.  How we tell the difference depends on
-     * the version of Python.
+     * the version of Python. Only measured frames need the initial line:
+     * both line recording and return arcs are guarded by file_data.
      */
-    BOOL real_call = FALSE;
+    if (self->pcur_entry->file_data) {
+        BOOL real_call = FALSE;
 
 #ifdef RESUME
-    /*
-     * The current opcode is guaranteed to be RESUME. The argument
-     * determines what kind of resume it is.
-     */
-    pCode = MyCode_GetCode(MyFrame_BorrowCode(frame));
-    real_call = (PyBytes_AS_STRING(pCode)[MyFrame_GetLasti(frame) + 1] == 0);
+        /*
+         * The current opcode is guaranteed to be RESUME. The argument
+         * determines what kind of resume it is.
+         */
+        pCode = MyCode_GetCode(MyFrame_BorrowCode(frame));
+        real_call = (PyBytes_AS_STRING(pCode)[MyFrame_GetLasti(frame) + 1] == 0);
 #else
-    // f_lasti is -1 for a true call, and a real byte offset for a generator re-entry.
-    real_call = (MyFrame_GetLasti(frame) < 0);
+        // f_lasti is -1 for a true call, and a real offset for a generator re-entry.
+        real_call = (MyFrame_GetLasti(frame) < 0);
 #endif
 
-    if (real_call) {
-        self->pcur_entry->last_line = -MyFrame_BorrowCode(frame)->co_firstlineno;
-    }
-    else {
-        self->pcur_entry->last_line = PyFrame_GetLineNumber(frame);
+        if (real_call) {
+            self->pcur_entry->last_line = -MyFrame_BorrowCode(frame)->co_firstlineno;
+        }
+        else {
+            self->pcur_entry->last_line = PyFrame_GetLineNumber(frame);
+        }
     }
 
 ok:

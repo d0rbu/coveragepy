@@ -16,6 +16,38 @@ from tests.helpers import CheckUniqueFilenames
 class CollectorTest(CoverageTest):
     """Test specific aspects of the collection process."""
 
+    def test_excluded_generator_calls_measured_functions(self) -> None:
+        self.make_file(
+            "measured.py",
+            """\
+            def callback(value):
+                if value:
+                    return value * 2
+                return -1
+            """,
+        )
+        self.make_file(
+            "excluded.py",
+            """\
+            from measured import callback
+
+            def stream():
+                for value in [0, 1, 2]:
+                    yield callback(value)
+
+            assert list(stream()) == [-1, 2, 4]
+            """,
+        )
+        cov = coverage.Coverage(include=["measured.py"], branch=True)
+        self.start_import_stop(cov, "excluded")
+        data = cov.get_data()
+        assert data.measured_files() == {os.path.abspath("measured.py")}
+        arcs = data.arcs(os.path.abspath("measured.py"))
+        assert arcs is not None
+        assert sorted(arcs) == [
+            (-1, 1), (-1, 2), (1, -1), (2, 3), (2, 4), (3, -1), (4, -1),
+        ]
+
     def test_should_trace_cache(self) -> None:
         # The tracers should only invoke should_trace once for each file name.
 

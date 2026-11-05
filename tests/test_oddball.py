@@ -526,6 +526,38 @@ class DoctestTest(CoverageTest):
 class GettraceTest(CoverageTest):
     """Tests that we work properly with `sys.gettrace()`."""
 
+    @pytest.mark.skipif(not testenv.SETTRACE_CORE, reason="Requires per-frame trace flags")
+    def test_generator_preserves_explicit_disabled_line_tracing(self) -> None:
+        self.make_file(
+            "suspended.py",
+            """\
+            import sys
+
+            def suspended():
+                sys._getframe().f_trace_lines = False
+                yield 1
+                after_resume = 2
+                yield after_resume
+            """,
+        )
+        self.make_file(
+            "driver.py",
+            """\
+            from suspended import suspended
+            assert list(suspended()) == [1, 2]
+            """,
+        )
+        cov = coverage.Coverage(include=["suspended.py"], branch=True)
+        self.start_import_stop(cov, "driver")
+        data = cov.get_data()
+        lines = data.lines(os.path.abspath("suspended.py"))
+        arcs = data.arcs(os.path.abspath("suspended.py"))
+        assert lines is not None and arcs is not None
+        assert sorted(lines) == [1, 3, 4, 7]
+        assert sorted(arcs) == [
+            (-3, 4), (-1, 1), (1, 3), (3, -1), (7, -3),
+        ]
+
     def test_round_trip_in_untraced_function(self) -> None:
         # https://github.com/coveragepy/coveragepy/issues/575
         self.make_file("main.py", """import sample""")
